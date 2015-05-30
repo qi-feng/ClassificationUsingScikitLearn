@@ -3,6 +3,7 @@
 
 - **Kaggle Otto group classification challenge**:
   * This directory contains some of my contributions to the team BoilerUp in the Kaggle otto challenge. nn_otto_ensemble_v8.6.py was one of our best attempts. 
+  * This work is a collaboration with En-Hsin Peng https://github.com/enhsin. 
   * Data and description of the problem can be obtained at:  https://www.kaggle.com/c/otto-group-product-classification-challenge/
   * 61878 enetries are provided as the training data. Each entry of the training data is consisted of 93 features, and are labeled one of nine classes. 
   * We used an ensemble of 4 models:
