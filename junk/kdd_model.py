@@ -308,5 +308,22 @@ def run():
     make_predictions([clf_rf, clf_gbdt,clf_nn], predict_x, enrollment_id, test_x=test_x, test_y=test_y,
                      outfile='test_sub1.csv')
 
+def tune():
+    train_ratio = 0.9
+    test_ratio = 1 - train_ratio
+    x, y = read_train(test=0.1)
+    sss = StratifiedShuffleSplit(y, test_size=test_ratio, random_state=1234)
+    for train_index, test_index in sss:
+        break
+
+    train_x, train_y = x[train_index], y[train_index]
+    test_x, test_y = x[test_index], y[test_index]
+
+    do_nn(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+    do_RF(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+    do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+
+
+
 if __name__ == '__main__':
     run()
