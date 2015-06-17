@@ -71,7 +71,7 @@ def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_dep
           criterion='entropy',
           min_samples_leaf=1, min_samples_split=5, random_state=4141, n_jobs=-1, load=False, save=True,
           outfile=None, search=False):
-    if search != False:
+    if search == False:
         mdl_name = 'rf_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
                    + '_minSamLeaf' + str(min_samples_leaf) + '_minSamSplit' + str(min_samples_split) + '.pkl'
         if os.path.exists(mdl_name) == True:
@@ -100,29 +100,31 @@ def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_dep
             return -1
 
         min_samples_split = [11, ]
+        max_depth_list = [20, 30, 40]
         n_list = [1000, 1500, 2000]
         info = {}
         for mss in min_samples_split:
-            for n in n_list:
-                print 'n = ', n
-                print 'min_samples_split = ', mss
-                clf_rf = RandomForestClassifier(n_estimators=n, max_depth=max_depth, max_features=max_features,
-                                                criterion=criterion, min_samples_leaf=min_samples_leaf,
-                                                min_samples_split=mss, random_state=random_state, n_jobs=n_jobs)
-                clf_rf.fit(train_x, train_y)
-                probas_rf = clf_rf.predict_proba(test_x)[:, 1]
-                scores = roc_auc_score(test_y, probas_rf)
-                info[n, mss] = scores
+            for max_depth in max_depth_list:
+                for n in n_list:
+                    print 'n = ', n
+                    print 'min_samples_split = ', mss
+                    print 'max_depth = ', max_depth
+                    clf_rf = RandomForestClassifier(n_estimators=n, max_depth=max_depth, max_features=max_features,
+                                                    criterion=criterion, min_samples_leaf=min_samples_leaf,
+                                                    min_samples_split=mss, random_state=random_state, n_jobs=n_jobs)
+                    clf_rf.fit(train_x, train_y)
+                    probas_rf = clf_rf.predict_proba(test_x)[:, 1]
+                    scores = roc_auc_score(test_y, probas_rf)
+                    info[n, mss, max_depth] = scores
         for mss in info:
             scores = info[mss]
             print(
-                'n, min_samples_split = %d, %d, ROC score = %.5f(%.5f)' % (mss[0], mss[1], scores.mean(), scores.std()))
+                'n = %d, min_samples_split = %d, max_depth = %d, ROC score = %.5f(%.5f)' % (mss[0], mss[1], mss[2], scores.mean(), scores.std()))
 
 
 def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_depth=8, max_features=25,
-            n_estimators=600,
-            load=False, save=True, outfile=None, search=False):
-    if search != False:
+            n_estimators=600, load=False, save=True, outfile=None, search=False):
+    if search == False:
         mdl_name = 'gbdt_train_lr' + str(learning_rate) + '_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '.pkl'
         if os.path.exists(mdl_name) == True:
             clf_gbdt = joblib.load(mdl_name)
@@ -146,8 +148,8 @@ def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_
         return clf_gbdt
     else:
         max_depth = [6]
-        n_list = [1000, 1500, 2000]
-        lr_list = [0.05, 0.01]
+        n_list = [1000, 2000, 3000]
+        lr_list = [0.02, 0.01, 0.005]
         info = {}
         for md in max_depth:
             for n in n_list:
@@ -174,7 +176,7 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=8
     num_features = len(xTrain[0, :])
     num_classes = 2
     print num_features
-    if search != False:
+    if search == False:
         layers0 = [('input', InputLayer),
                    ('dropoutin', DropoutLayer),
                    ('dense0', DenseLayer),
@@ -203,9 +205,9 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=8
         return clf
     else:
         dropout_in_list = [0.2]
-        dense0_num_list = [1000, 1500, 2000]
+        dense0_num_list = [500, 1000, 1500]
         dropout_p_list = [0.5]
-        dense1_num_list = [0.05, 0.01]
+        dense1_num_list = [400, 800, 1200]
         info = {}
         for d_in in dropout_in_list:
             for d_01 in dropout_p_list:
