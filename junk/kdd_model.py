@@ -26,6 +26,40 @@ from sklearn.cross_validation import StratifiedShuffleSplit
 
 from sklearn.metrics import roc_auc_score, roc_curve, auc
 
+def make_train():
+    log_train_df = pd.read_csv('train/log_train.csv')
+    train_df = pd.read_csv('train/truth_train.csv',header=None)
+    enrollment_train_df = pd.read_csv('train/enrollment_train.csv')
+
+    train_y = train_df[1].values
+
+    event_count = log_train_df.groupby('enrollment_id', as_index=False).count()
+    event_count = event_count.rename(columns = {'time':'event_count'})
+
+    object_count = event_count.copy()
+    object_count['access_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['problem_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['page_close_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['video_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['nagivate_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['discussion_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['wiki_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+
+    #print log_train_df['event'].unique()
+    for i, en_id in enumerate(object_count['enrollment_id']):
+        res = log_train_df[(log_train_df['enrollment_id']==en_id)]['event'].value_counts()
+        for k, val in zip(res.keys(), res.values):
+            object_count[k+'_count'][i] = val
+
+    train_x = pd.concat([enrollment_train_df, event_count], axis=1)
+
+    #return train_x, train_y
+    #if __name__ == '__main__':
+    #train_x, train_y = read_train();
+    #train_x.to_csv('train_features.csv', index=False)
+    data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
+    data.to_csv('train_xy.csv', index=False)
+
 
 def read_train(file='train_xy.csv', test=0.2, transform=None):
     print "Read train data..."
@@ -147,17 +181,17 @@ def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_
             print("GBDT ROC score", score_gbdt)
         return clf_gbdt
     else:
-        max_depth = [6]
+        max_depth_list = [6,]
         n_list = [1000, 2000, 3000]
         lr_list = [0.02, 0.01, 0.005]
         info = {}
-        for md in max_depth:
+        for md in max_depth_list:
             for n in n_list:
                 for lr in lr_list:
                     print 'max_depth = ', md
                     print 'n = ', n
                     print 'learning rate = ', lr
-                    clf_gbdt = GradientBoostingClassifier(learning_rate=learning_rate, max_depth=max_depth,
+                    clf_gbdt = GradientBoostingClassifier(learning_rate=learning_rate, max_depth=md,
                                                           max_features=max_features, n_estimators=n_estimators)
                     # n_estimators=500, learning_rate=0.5, max_depth=3)
                     clf_gbdt.fit(train_x, train_y)
@@ -326,4 +360,6 @@ def tune():
 
 
 if __name__ == '__main__':
+    #make_train()
+    #tune()
     run()
