@@ -72,7 +72,8 @@ def make_train():
         #count number of events for each type of events
         res = log_train_df[(log_train_df['enrollment_id']==en_id)]['event'].value_counts()
         for k, val in zip(res.keys(), res.values):
-            object_count[k+'_count'][i] = val
+            #object_count[k+'_count'][i] = val
+            object_count.loc[i,(k+'_count')] = val
         #get the earliest time that a problem and a video that is accessed
         t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
         t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
@@ -80,6 +81,10 @@ def make_train():
         t_first_video = diff_sec(course_start, t_first_video)
         object_count['first_problem_time'][i] = t_first_problem
         object_count['first_video_time'][i] = t_first_video
+        if i%1000 == 1:
+            print(str(i)+"th enrollment processed")
+            print object_count.iloc(i-1)
+
 
     object_count.drop('enrollment_id', axis=1, inplace=True)
     train_x = pd.concat([enrollment_train_df, object_count], axis=1)
@@ -91,6 +96,7 @@ def make_train():
     data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
     data.to_csv('train_xy2.csv', index=False)
 
+def add_feature():
 
 def read_train(file='train_xy.csv', test=0.2, transform=None):
     print "Read train data..."
