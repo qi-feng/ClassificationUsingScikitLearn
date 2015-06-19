@@ -64,8 +64,11 @@ def make_train():
     object_count['first_problem_time'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
     object_count['first_video_time'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
 
-    course_start = obj_df.start[(obj_df.start != 'null') & (obj_df.category=='course')]
-    chapter_start = obj_df.start[(obj_df.start != 'null') & (obj_df.category=='chapter')]
+    course_start={}
+    for key, val in zip(obj_df.course_id[(obj_df.start != 'null') & (obj_df.category=='course')],
+                        obj_df.start[(obj_df.start != 'null') & (obj_df.category=='course')]):
+        course_start[key] = val
+    #chapter_start = obj_df.start[(obj_df.start != 'null') & (obj_df.category=='chapter')]
 
     #print log_train_df['event'].unique()
     for i, en_id in enumerate(object_count['enrollment_id']):
@@ -77,10 +80,14 @@ def make_train():
         #get the earliest time that a problem and a video that is accessed
         t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
         t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
-        t_first_problem = diff_sec(course_start, t_first_problem)
-        t_first_video = diff_sec(course_start, t_first_video)
-        object_count['first_problem_time'][i] = t_first_problem
-        object_count['first_video_time'][i] = t_first_video
+        obj_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].object.values[0]
+        obj_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].object.values[0]
+        this_course_start = course_start[obj_df[(obj_df.module_id==obj_first_problem)].course_id.values[0]]
+
+        t_first_problem = diff_sec(this_course_start, t_first_problem)
+        t_first_video = diff_sec(this_course_start, t_first_video)
+        object_count.loc[i,'first_problem_time'] = t_first_problem
+        object_count.loc[i,'first_video_time'] = t_first_video
         if i%1000 == 1:
             print(str(i)+"th enrollment processed")
             print object_count.iloc(i-1)
@@ -96,7 +103,8 @@ def make_train():
     data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
     data.to_csv('train_xy2.csv', index=False)
 
-def add_feature():
+#def add_feature():
+
 
 def read_train(file='train_xy.csv', test=0.2, transform=None):
     print "Read train data..."
