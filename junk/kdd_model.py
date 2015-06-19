@@ -78,14 +78,20 @@ def make_train():
             #object_count[k+'_count'][i] = val
             object_count.loc[i,(k+'_count')] = val
         #get the earliest time that a problem and a video that is accessed
-        t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
-        t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
-        obj_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].object.values[0]
-        obj_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].object.values[0]
-        this_course_start = course_start[obj_df[(obj_df.module_id==obj_first_problem)].course_id.values[0]]
+        try:
+            t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
+            t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
+            obj_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].object.values[0]
+            obj_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].object.values[0]
+            this_course_start = course_start[obj_df[(obj_df.module_id==obj_first_problem)].course_id.values[0]]
 
-        t_first_problem = diff_sec(this_course_start, t_first_problem)
-        t_first_video = diff_sec(this_course_start, t_first_video)
+            t_first_problem = diff_sec(this_course_start, t_first_problem)
+            t_first_video = diff_sec(this_course_start, t_first_video)
+        except:
+            print "Trouble getting the first problem/video time"
+            t_first_problem = -1
+            t_first_video = -1
+
         object_count.loc[i,'first_problem_time'] = t_first_problem
         object_count.loc[i,'first_video_time'] = t_first_video
         if i%1000 == 1:
@@ -394,7 +400,7 @@ def run():
     clf_gbdt = do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y)
 
     make_predictions([clf_rf, clf_gbdt,clf_nn], predict_x, enrollment_id, test_x=test_x, test_y=test_y,
-                     outfile='test_sub1.csv')
+                     outfile='test_sub2.csv')
 
 def tune():
     train_ratio = 0.9
@@ -414,6 +420,6 @@ def tune():
 
 
 if __name__ == '__main__':
-    #make_train()
+    make_train()
     #tune()
     run()
