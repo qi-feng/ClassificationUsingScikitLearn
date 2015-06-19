@@ -23,13 +23,29 @@ from lasagne.nonlinearities import softmax
 from lasagne.updates import nesterov_momentum
 from nolearn.lasagne import NeuralNet
 from sklearn.cross_validation import StratifiedShuffleSplit
+from sklearn.calibration import CalibratedClassifierCV
 
 from sklearn.metrics import roc_auc_score, roc_curve, auc
 
+def iso2sec(t):
+    #input should have format YYYY-MM-DDTHH:MM:SS
+    y, m, d = t.split('T')[0].split('-')
+    h, mt, s = t.split('T')[1].split(':')
+    dt = datetime.datetime(int(y), int(m), int(d), int(h), int(mt), int(s))
+    return dt
+
+def diff_sec(t1, t2):
+    #return t2-t1 in unit of sec
+    #input should have format YYYY-MM-DDTHH:MM:SS
+    dt1 = iso2sec(t1)
+    dt2 = iso2sec(t2)
+    return (dt2-dt1).total_seconds()
+
 def make_train():
     log_train_df = pd.read_csv('train/log_train.csv')
-    train_df = pd.read_csv('train/truth_train.csv',header=None)
+    train_df = pd.read_csv('train/truth_train.csv', header=None)
     enrollment_train_df = pd.read_csv('train/enrollment_train.csv')
+    obj_df = pd.read_csv('object.csv')
 
     train_y = train_df[1].values
 
@@ -45,20 +61,35 @@ def make_train():
     object_count['discussion_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
     object_count['wiki_count'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
 
+    object_count['first_problem_time'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+    object_count['first_video_time'] = pd.Series(np.zeros(len(object_count)), index=object_count.index)
+
+    course_start = obj_df.start[(obj_df.start != 'null') & (obj_df.category=='course')]
+    chapter_start = obj_df.start[(obj_df.start != 'null') & (obj_df.category=='chapter')]
+
     #print log_train_df['event'].unique()
     for i, en_id in enumerate(object_count['enrollment_id']):
+        #count number of events for each type of events
         res = log_train_df[(log_train_df['enrollment_id']==en_id)]['event'].value_counts()
         for k, val in zip(res.keys(), res.values):
             object_count[k+'_count'][i] = val
+        #get the earliest time that a problem and a video that is accessed
+        t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
+        t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
+        t_first_problem = diff_sec(course_start, t_first_problem)
+        t_first_video = diff_sec(course_start, t_first_video)
+        object_count['first_problem_time'][i] = t_first_problem
+        object_count['first_video_time'][i] = t_first_video
 
-    train_x = pd.concat([enrollment_train_df, event_count], axis=1)
+    object_count.drop('enrollment_id', axis=1, inplace=True)
+    train_x = pd.concat([enrollment_train_df, object_count], axis=1)
 
     #return train_x, train_y
     #if __name__ == '__main__':
     #train_x, train_y = read_train();
     #train_x.to_csv('train_features.csv', index=False)
     data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
-    data.to_csv('train_xy.csv', index=False)
+    data.to_csv('train_xy2.csv', index=False)
 
 
 def read_train(file='train_xy.csv', test=0.2, transform=None):
@@ -101,59 +132,68 @@ def read_test(file='test_features.csv', transform=None, scaler=None):
     return x, enrollment_id
 
 
-def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_depth=45, max_features=40,
-          criterion='entropy',
-          min_samples_leaf=1, min_samples_split=5, random_state=4141, n_jobs=-1, load=False, save=True,
+def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_depth=20, max_features=20,
+          criterion='entropy', method='isotonic', cv=5,
+          min_samples_leaf=1, min_samples_split=13, random_state=4141, n_jobs=-1, load=False, save=True,
           outfile=None, search=False):
     if search == False:
-        mdl_name = 'rf_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
+        #mdl_name = 'rf_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
+        mdl_name = 'rf_isotonic_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
                    + '_minSamLeaf' + str(min_samples_leaf) + '_minSamSplit' + str(min_samples_split) + '.pkl'
         if os.path.exists(mdl_name) == True:
-            clf_rf = joblib.load(mdl_name)
+            clf_rf_isotonic = joblib.load(mdl_name)
         else:
-            clf_rf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth, max_features=max_features,
-                                            criterion=criterion, min_samples_leaf=min_samples_leaf,
-                                            min_samples_split=min_samples_split, random_state=random_state,
-                                            n_jobs=n_jobs)
-            clf_rf.fit(train_x, train_y)
+            clf_rf = RandomForestClassifier(n_estimators=n_estimators, max_depth=max_depth,
+                                                     max_features=max_features, criterion=criterion,
+                                                     min_samples_leaf=min_samples_leaf,
+                                                     min_samples_split=min_samples_split, random_state=random_state,
+                                                     n_jobs=n_jobs)
+            clf_rf_isotonic = CalibratedClassifierCV(clf_rf, cv=cv, method=method)
+            clf_rf_isotonic.fit(train_x, train_y)
             if save == True:
                 try:
-                    _ = joblib.dump(clf_rf, mdl_name, compress=1)
+                    _ = joblib.dump(clf_rf_isotonic, mdl_name, compress=1)
                 except:
                     print("*** Save RF model to pickle failed!!!")
                     if outfile != None:
                         outfile.write("*** Save RF model to pickle failed!!!")
         if test_x != None and test_y != None:
-            probas_rf = clf_rf.predict_proba(test_x)[:, 1]
+            probas_rf = clf_rf_isotonic.predict_proba(test_x)[:, 1]
             score_rf = roc_auc_score(test_y, probas_rf)
             print("RF ROC score", score_rf)
-        return clf_rf
+        return clf_rf_isotonic
     else:
         if test_x == None or test_y == None:
             print "Have to provide test_x and test_y to do grid search!"
             return -1
 
-        min_samples_split = [11, ]
-        max_depth_list = [20, 30, 40]
-        n_list = [1000, 1500, 2000]
+        min_samples_split = [10, 11, 12]
+        max_depth_list = [15, 20, 25]
+        n_list = [2000]
+        max_feat_list = [10, 20, 30]
         info = {}
         for mss in min_samples_split:
             for max_depth in max_depth_list:
-                for n in n_list:
+                #for n in n_list:
+                for max_features in max_feat_list:
+                    print 'max_features = ', max_features
+                    n=2000
                     print 'n = ', n
                     print 'min_samples_split = ', mss
                     print 'max_depth = ', max_depth
                     clf_rf = RandomForestClassifier(n_estimators=n, max_depth=max_depth, max_features=max_features,
                                                     criterion=criterion, min_samples_leaf=min_samples_leaf,
                                                     min_samples_split=mss, random_state=random_state, n_jobs=n_jobs)
-                    clf_rf.fit(train_x, train_y)
-                    probas_rf = clf_rf.predict_proba(test_x)[:, 1]
+                    #clf_rf.fit(train_x, train_y)
+                    clf_rf_isotonic = CalibratedClassifierCV(clf_rf, cv=cv, method=method)
+                    clf_rf_isotonic.fit(train_x, train_y)
+                    probas_rf = clf_rf_isotonic.predict_proba(test_x)[:, 1]
                     scores = roc_auc_score(test_y, probas_rf)
-                    info[n, mss, max_depth] = scores
+                    info[max_features, mss, max_depth] = scores
         for mss in info:
             scores = info[mss]
             print(
-                'n = %d, min_samples_split = %d, max_depth = %d, ROC score = %.5f(%.5f)' % (mss[0], mss[1], mss[2], scores.mean(), scores.std()))
+                'clf_rf_isotonic: max_features = %d, min_samples_split = %d, max_depth = %d, ROC score = %.5f(%.5f)' % (mss[0], mss[1], mss[2], scores.mean(), scores.std()))
 
 
 def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_depth=8, max_features=25,
@@ -181,9 +221,9 @@ def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_
             print("GBDT ROC score", score_gbdt)
         return clf_gbdt
     else:
-        max_depth_list = [6,]
-        n_list = [1000, 2000, 3000]
-        lr_list = [0.02, 0.01, 0.005]
+        max_depth_list = [5,6,7]
+        n_list = [2000, 3000]
+        lr_list = [0.01, 0.005]
         info = {}
         for md in max_depth_list:
             for n in n_list:
@@ -204,7 +244,7 @@ def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_
                 md[0], md[1], md[2], scores.mean(), scores.std()))
 
 
-def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=800, dropout_p=0.5, dense1_num=500,
+def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=600, dropout_p=0.4, dense1_num=1200,
                   update_learning_rate=0.00002,
                   update_momentum=0.9, test_ratio=0.2, max_epochs=40, search=False):
     num_features = len(xTrain[0, :])
@@ -353,7 +393,7 @@ def tune():
     train_x, train_y = x[train_index], y[train_index]
     test_x, test_y = x[test_index], y[test_index]
 
-    do_nn(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+    #do_nn(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
     do_RF(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
     do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
 
