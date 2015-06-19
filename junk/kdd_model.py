@@ -80,16 +80,20 @@ def make_train():
         #get the earliest time that a problem and a video that is accessed
         try:
             t_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].time.values[0]
-            t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
             obj_first_problem = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='problem')].object.values[0]
-            obj_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].object.values[0]
             this_course_start = course_start[obj_df[(obj_df.module_id==obj_first_problem)].course_id.values[0]]
-
             t_first_problem = diff_sec(this_course_start, t_first_problem)
+        except:
+            print "Trouble getting the first problem time for enrollment ", en_id
+            t_first_problem = -1
+
+        try:
+            t_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].time.values[0]
+            this_course_start = course_start[obj_df[(obj_df.module_id==obj_first_video)].course_id.values[0]]
+            obj_first_video = log_train_df[(log_train_df['enrollment_id']==en_id) & (log_train_df['event']=='video')].object.values[0]
             t_first_video = diff_sec(this_course_start, t_first_video)
         except:
-            print "Trouble getting the first problem/video time"
-            t_first_problem = -1
+            print "Trouble getting the first video time for enrollment ", en_id
             t_first_video = -1
 
         object_count.loc[i,'first_problem_time'] = t_first_problem
