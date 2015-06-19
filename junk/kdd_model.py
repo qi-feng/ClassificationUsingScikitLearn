@@ -41,13 +41,17 @@ def diff_sec(t1, t2):
     dt2 = iso2sec(t2)
     return (dt2-dt1).total_seconds()
 
-def make_train():
-    log_train_df = pd.read_csv('train/log_train.csv')
-    train_df = pd.read_csv('train/truth_train.csv', header=None)
-    enrollment_train_df = pd.read_csv('train/enrollment_train.csv')
-    obj_df = pd.read_csv('object.csv')
+def make_feature(test=False, outfile='train_xy2.csv'):
+    if test==False:
+        log_train_df = pd.read_csv('train/log_train.csv')
+        train_df = pd.read_csv('train/truth_train.csv', header=None)
+        enrollment_train_df = pd.read_csv('train/enrollment_train.csv')
+        train_y = train_df[1].values
+    else:
+        log_train_df = pd.read_csv('test/log_test.csv')
+        enrollment_train_df = pd.read_csv('test/enrollment_test.csv')
 
-    train_y = train_df[1].values
+    obj_df = pd.read_csv('object.csv')
 
     event_count = log_train_df.groupby('enrollment_id', as_index=False).count()
     event_count = event_count.rename(columns = {'time':'event_count'})
@@ -110,13 +114,18 @@ def make_train():
     #if __name__ == '__main__':
     #train_x, train_y = read_train();
     #train_x.to_csv('train_features.csv', index=False)
-    data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
-    data.to_csv('train_xy2.csv', index=False)
+    if test==False:
+        data = pd.concat([train_x, pd.DataFrame({'y':train_y})], axis=1)
+        data.to_csv(outfile, index=False)
+    else:
+        data = train_x
+        data.to_csv(outfile, index=False)
+
 
 #def add_feature():
 
 
-def read_train(file='train_xy.csv', test=0.2, transform=None):
+def read_train(file='train_xy2.csv', test=0.2, transform=None):
     print "Read train data..."
     data = pd.read_csv(file)
     # data.drop('enrollment_id','username','course_id', axis=1, inplace=True)
@@ -385,10 +394,10 @@ def make_predictions(clfs, predict_x, enrollment_id, test_x=None, test_y=None, o
     sub.to_csv(outfile, index=False, header=False)
 
 
-def run():
+def run(train_file='train_xy2.csv', test_file='test_features2.csv', outfile='test_sub2.csv'):
     train_ratio = 0.9
     test_ratio = 1 - train_ratio
-    x, y = read_train(test=0.1)
+    x, y = read_train(file=train_file, test=0.1)
     sss = StratifiedShuffleSplit(y, test_size=test_ratio, random_state=1234)
     for train_index, test_index in sss:
         break
@@ -396,7 +405,7 @@ def run():
     train_x, train_y = x[train_index], y[train_index]
     test_x, test_y = x[test_index], y[test_index]
 
-    predict_x, enrollment_id = read_test()
+    predict_x, enrollment_id = read_test(file=test_file)
 
     clf_nn = do_nn(train_x, train_y, test_x=test_x, test_y=test_y, dropout_in=0.1, dense0_num=200, dropout_p=0.5,
                    dense1_num=400, update_learning_rate=0.00003, update_momentum=0.9, test_ratio=0.1, max_epochs=20)
@@ -404,12 +413,12 @@ def run():
     clf_gbdt = do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y)
 
     make_predictions([clf_rf, clf_gbdt,clf_nn], predict_x, enrollment_id, test_x=test_x, test_y=test_y,
-                     outfile='test_sub2.csv')
+                     outfile=outfile)
 
-def tune():
+def tune(train_file='train_xy2.csv'):
     train_ratio = 0.9
     test_ratio = 1 - train_ratio
-    x, y = read_train(test=0.1)
+    x, y = read_train(file=train_file, test=0.1)
     sss = StratifiedShuffleSplit(y, test_size=test_ratio, random_state=1234)
     for train_index, test_index in sss:
         break
@@ -424,6 +433,7 @@ def tune():
 
 
 if __name__ == '__main__':
-    make_train()
-    #tune()
-    run()
+    make_feature(test=False, outfile='train_xy2.csv')
+    make_feature(test=True, outfile='test_features2.csv')
+    #tune(train_file='train_xy2.csv')
+    run(train_file='train_xy2.csv', test_file='test_features2.csv', outfile='test_sub2.csv')
