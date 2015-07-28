@@ -124,6 +124,45 @@ def make_feature(test=False, outfile='train_xy2.csv'):
 
 #def add_feature():
 
+def read_data1(file='train_xy3.csv', test=False, test_ratio=0.1, scaler=None, scale=True, transform=None):
+    if test==True:
+        print "Read test data..."
+        x = pd.read_csv(file)
+        x = np.array(x.values)
+        if not scaler:
+            scaler = StandardScaler()
+        if transform == 'log':
+            print "log transform the input features"
+            x = scaler.fit_transform(np.log(x + 1.))
+        elif scale==True:
+            x = scaler.fit_transform(x).astype(np.float32)
+        else:
+            x = x.astype(np.float32)
+        return x
+    print "Read train data..."
+    data = pd.read_csv(file)
+    # data.drop('enrollment_id','username','course_id', axis=1, inplace=True)    #x = data.drop(['casual', 'registered', 'count'], axis=1)
+    #x = x.values.copy()
+    x = pd.concat([data.get(['event_count', 'access_count', 'problem_count', 'page_close_count', 'video_count',
+                             'nagivate_count', 'discussion_count', 'wiki_count',
+                             'first_problem_time', 'first_video_time','obj_frequency_25',
+                             'obj_frequency_50','obj_frequency_75','obj_duration']),
+                   #pd.get_dummies(data.username, prefix='user'),
+                   pd.get_dummies(data.course_id, prefix='course')],
+                  axis=1)
+    scaler = StandardScaler()
+    x = np.array(x.values)
+    x = np.nan_to_num(x)
+    if transform == 'log':
+        print "log transform the input features"
+        x = scaler.fit_transform(np.log(x + 1.))
+    elif scale==True:
+        x = scaler.fit_transform(x).astype(np.float32)
+    else:
+        x = x.astype(np.float32)
+    y = data['y']
+    y = y.values.astype(np.int32)
+    return x, y, scaler
 
 def read_train(file='train_xy2.csv', test=0.2, transform=None):
     print "Read train data..."
@@ -165,13 +204,17 @@ def read_test(file='test_features.csv', transform=None, scaler=None):
     return x, enrollment_id
 
 
-def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_depth=20, max_features=20,
+def do_RF3(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_depth=20, max_features=20,
           criterion='entropy', method='isotonic', cv=5,
           min_samples_leaf=1, min_samples_split=13, random_state=4141, n_jobs=-1, load=False, save=True,
-          outfile=None, search=False):
+          outfile=None, search=False, log=False):
     if search == False:
         #mdl_name = 'rf_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
-        mdl_name = 'rf_isotonic_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
+        if log==True:
+            mdl_name = 'rf_log_isotonic_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
+                + '_minSamLeaf' + str(min_samples_leaf) + '_minSamSplit' + str(min_samples_split) + '.pkl'
+        else:
+            mdl_name = 'rf_isotonic_train_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '_maxfeat' + str(max_features) \
                    + '_minSamLeaf' + str(min_samples_leaf) + '_minSamSplit' + str(min_samples_split) + '.pkl'
         if os.path.exists(mdl_name) == True:
             clf_rf_isotonic = joblib.load(mdl_name)
@@ -201,9 +244,9 @@ def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_dep
             return -1
 
         min_samples_split = [10, 11, 12]
-        max_depth_list = [15, 20, 25]
+        max_depth_list = [13, 15, 17]
         n_list = [2000]
-        max_feat_list = [10, 20, 30]
+        max_feat_list = [8, 10, 12]
         info = {}
         for mss in min_samples_split:
             for max_depth in max_depth_list:
@@ -219,7 +262,13 @@ def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_dep
                                                     min_samples_split=mss, random_state=random_state, n_jobs=n_jobs)
                     #clf_rf.fit(train_x, train_y)
                     clf_rf_isotonic = CalibratedClassifierCV(clf_rf, cv=cv, method=method)
-                    clf_rf_isotonic.fit(train_x, train_y)
+                    mdl_name = 'rf_n'+str(n)+'_mss'+str(mss)+'_md'+str(max_depth)+'mf'+str(max_features)+'.pkl'
+                    if os.path.exists(mdl_name) == True:
+                        clf_rf_isotonic = joblib.load(mdl_name)
+                    else:
+                        clf_rf_isotonic = CalibratedClassifierCV(clf_rf, cv=cv, method=method)
+                        clf_rf_isotonic.fit(train_x, train_y)
+                        _ = joblib.dump(clf_rf_isotonic, mdl_name, compress=1)
                     probas_rf = clf_rf_isotonic.predict_proba(test_x)[:, 1]
                     scores = roc_auc_score(test_y, probas_rf)
                     info[max_features, mss, max_depth] = scores
@@ -229,10 +278,13 @@ def do_RF(train_x, train_y, test_x=None, test_y=None, n_estimators=2000, max_dep
                 'clf_rf_isotonic: max_features = %d, min_samples_split = %d, max_depth = %d, ROC score = %.5f(%.5f)' % (mss[0], mss[1], mss[2], scores.mean(), scores.std()))
 
 
-def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_depth=8, max_features=25,
-            n_estimators=600, load=False, save=True, outfile=None, search=False):
+def do_gbdt4(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_depth=8, max_features=25,
+            n_estimators=600, load=False, save=True, outfile=None, search=False, log=False):
     if search == False:
-        mdl_name = 'gbdt_train_lr' + str(learning_rate) + '_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '.pkl'
+        if log==True:
+            mdl_name = 'gbdt_log_train_lr' + str(learning_rate) + '_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '.pkl'
+        else:
+            mdl_name = 'gbdt_train_lr' + str(learning_rate) + '_n' + str(n_estimators) + '_maxdep' + str(max_depth) + '.pkl'
         if os.path.exists(mdl_name) == True:
             clf_gbdt = joblib.load(mdl_name)
         else:
@@ -254,32 +306,39 @@ def do_gbdt(train_x, train_y, test_x=None, test_y=None, learning_rate=0.03, max_
             print("GBDT ROC score", score_gbdt)
         return clf_gbdt
     else:
-        max_depth_list = [5,6,7]
-        n_list = [2000, 3000]
-        lr_list = [0.01, 0.005]
+        max_depth_list = [ 6, 7, 8, 9, 10]
+        n_list = [2000]
+        lr_list = [0.005,0.003]
+        max_feat_list = [15, 16, 17, 18, 20]
         info = {}
         for md in max_depth_list:
             for n in n_list:
                 for lr in lr_list:
+                  for mf in max_feat_list:
                     print 'max_depth = ', md
                     print 'n = ', n
                     print 'learning rate = ', lr
-                    clf_gbdt = GradientBoostingClassifier(learning_rate=learning_rate, max_depth=md,
-                                                          max_features=max_features, n_estimators=n_estimators)
+                    print 'max feature = ', mf
                     # n_estimators=500, learning_rate=0.5, max_depth=3)
-                    clf_gbdt.fit(train_x, train_y)
+                    mdl_name = 'gbdt_n'+str(n)+'_lr'+str(lr)+'_md'+str(md)+'mf'+str(mf)+'.pkl'
+                    if os.path.exists(mdl_name) == True:
+                        clf_gbdt = joblib.load(mdl_name)        
+                    else:
+                        clf_gbdt = GradientBoostingClassifier(learning_rate=learning_rate, max_depth=md,max_features=mf, n_estimators=n_estimators)
+                        clf_gbdt.fit(train_x, train_y)
+                        _ = joblib.dump(clf_gbdt, mdl_name, compress=1)
                     probas_gbdt = clf_gbdt.predict_proba(test_x)[:, 1]
                     score_gbdt = roc_auc_score(test_y, probas_gbdt)
-                    info[md, n, lr] = score_gbdt
+                    info[md, n, lr, mf] = score_gbdt
         for md in info:
             scores = info[md]
-            print('GBDT max_depth = %d, n = %d, lr = %.5f, ROC score = %.5f(%.5f)' % (
-                md[0], md[1], md[2], scores.mean(), scores.std()))
+            print('GBDT max_depth = %d, n = %d, lr = %.5f, max_feature = %d, ROC score = %.5f(%.5f)' % (
+                md[0], md[1], md[2], md[3], scores.mean(), scores.std()))
 
 
-def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=600, dropout_p=0.4, dense1_num=1200,
+def do_nn4(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=600, dropout_p=0.4, dense1_num=1200,
                   update_learning_rate=0.00002,
-                  update_momentum=0.9, test_ratio=0.2, max_epochs=40, search=False):
+                  update_momentum=0.9, test_ratio=0.1, max_epochs=40, search=False):
     num_features = len(xTrain[0, :])
     num_classes = 2
     print num_features
@@ -311,10 +370,10 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=6
             print("NN ROC score", score_nn)
         return clf
     else:
-        dropout_in_list = [0.2]
-        dense0_num_list = [500, 1000, 1500]
-        dropout_p_list = [0.5]
-        dense1_num_list = [400, 800, 1200]
+        dropout_in_list = [0.1]
+        dense0_num_list = [ 1000, 1200, 1400]
+        dropout_p_list = [0.5, 0.4]
+        dense1_num_list = [50, 100, 150, 200]
         info = {}
         for d_in in dropout_in_list:
             for d_01 in dropout_p_list:
@@ -323,7 +382,7 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=6
                         print 'dropout_in = ', d_in
                         print 'dense0_num = ', d0
                         print 'dropout_p = ', d_01
-                        print 'dense0_num = ', d1
+                        print 'dense1_num = ', d1
                         layers0 = [('input', InputLayer),
                                    ('dropoutin', DropoutLayer),
                                    ('dense0', DenseLayer),
@@ -332,10 +391,10 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=6
                                    ('output', DenseLayer)]
                         clf = NeuralNet(layers=layers0,
                                         input_shape=(None, num_features),
-                                        dropoutin_p=dropout_in,
-                                        dense0_num_units=dense0_num,
-                                        dropout_p=dropout_p,
-                                        dense1_num_units=dense1_num,
+                                        dropoutin_p=d_in,
+                                        dense0_num_units=d0,
+                                        dropout_p=d_01,
+                                        dense1_num_units=d1,
                                         output_num_units=num_classes,
                                         output_nonlinearity=softmax,
                                         update=nesterov_momentum,
@@ -347,6 +406,10 @@ def do_nn(xTrain, yTrain, test_x=None, test_y=None, dropout_in=0.2, dense0_num=6
                         clf.fit(xTrain, yTrain)
                         probas_nn = clf.predict_proba(test_x)[:, 1]
                         score_nn = roc_auc_score(test_y, probas_nn)
+                        print 'dropout_in = ', d_in
+                        print 'dense0_num = ', d0
+                        print 'dropout_p = ', d_01
+                        print 'dense1_num = ', d1
                         print("NN ROC score", score_nn)
                         info[d_in, d0, d_01, d1] = score_nn
         for md in info:
@@ -362,37 +425,29 @@ def roc_func(weights, predictions, test_y):
     return roc_auc_score(test_y, final_prediction)
 
 def make_predictions(clfs, predict_x, enrollment_id, test_x=None, test_y=None, outfile='test_sub.csv', weights=[]):
-    scores = []
+    scores = []    
     predictions = []
     for clf in clfs:
         _probas = clf.predict_proba(test_x)[:,1]
         _score = roc_auc_score(test_y, _probas)
         print("ROC score", _score)
-        predictions.extend(_probas)
-        scores.extend(_score)
-
+        predictions.append(_probas)
+        scores.append(_score)
     starting_values = [0.5]*len(predictions)
-
     cons = ({'type':'eq','fun':lambda w: 1-sum(w)})
-    #our weights are bound between 0 and 1
+    #our weights are bound between 0 and 1    
     bounds = [(0,1)]*len(predictions)
-
+    print len(predictions), len(test_y)
     res = minimize(roc_func, starting_values, args= (predictions, test_y), method='SLSQP', bounds=bounds, constraints=cons)
-
-    print('Ensemble Score: {best_score}'.format(best_score=res['fun']))
-    print('Best Weights: {weights}'.format(weights=res['x']))
-
-    predict_y=None
+    predict_y=[]
     for clf, wt in zip(clfs, res['x']):
         pred_test_current_clf = pd.DataFrame((clf.predict_proba(predict_x))) * wt
-        if predict_y==None:
+        if not predict_y:
             predict_y = pred_test_current_clf
         else:
             predict_y = predict_y + pred_test_current_clf
-
     sub = pd.concat([pd.DataFrame(enrollment_id), pd.DataFrame(predict_y)],axis=1)
     sub.to_csv(outfile, index=False, header=False)
-
 
 def run(train_file='train_xy2.csv', test_file='test_features2.csv', outfile='test_sub2.csv'):
     train_ratio = 0.9
@@ -407,33 +462,73 @@ def run(train_file='train_xy2.csv', test_file='test_features2.csv', outfile='tes
 
     predict_x, enrollment_id = read_test(file=test_file)
 
-    clf_nn = do_nn(train_x, train_y, test_x=test_x, test_y=test_y, dropout_in=0.1, dense0_num=200, dropout_p=0.5,
+    clf_nn = do_nn3(train_x, train_y, test_x=test_x, test_y=test_y, dropout_in=0.1, dense0_num=200, dropout_p=0.5,
                    dense1_num=400, update_learning_rate=0.00003, update_momentum=0.9, test_ratio=0.1, max_epochs=20)
-    clf_rf = do_RF(train_x, train_y, test_x=test_x, test_y=test_y)
-    clf_gbdt = do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y)
+    clf_rf = do_RF3(train_x, train_y, test_x=test_x, test_y=test_y)
+    clf_gbdt = do_gbdt3(train_x, train_y, test_x=test_x, test_y=test_y)
 
     make_predictions([clf_rf, clf_gbdt,clf_nn], predict_x, enrollment_id, test_x=test_x, test_y=test_y,
                      outfile=outfile)
 
-def tune(train_file='train_xy2.csv'):
-    train_ratio = 0.9
-    test_ratio = 1 - train_ratio
-    x, y = read_train(file=train_file, test=0.1)
-    sss = StratifiedShuffleSplit(y, test_size=test_ratio, random_state=1234)
-    for train_index, test_index in sss:
-        break
-
-    train_x, train_y = x[train_index], y[train_index]
-    test_x, test_y = x[test_index], y[test_index]
-
-    #do_nn(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+def tune3(train_x, train_y, test_x, test_y):
+    do_nn3(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
     do_RF(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
     do_gbdt(train_x, train_y, test_x=test_x, test_y=test_y, search=True)
+
+def rocFunc(weights, predictions, test_y):
+    ''' scipy minimize will pass the weights as a numpy array '''
+    final_prediction = 0
+    for weight, prediction in zip(weights, predictions):
+        final_prediction += weight*prediction
+    return -roc_auc_score(test_y, final_prediction)
+
+def makeSub(clfs, predict_x, enrollment_id, scaler, test_x, test_y, deval, dtest, outfile='test_sub.csv'):
+    scores = []
+    predictions = []
+
+    for ii, clf in enumerate(clfs):
+        if ii < 6:
+                #print ii, clf
+                #_probas = clf.predict(xgb.DMatrix(test_x))[:,1]
+                _probas = clf.predict(deval)
+        else:
+                #print ii, clf
+                _probas = clf.predict_proba(test_x)[:,1] #drop out prob
+        _score = roc_auc_score(test_y, _probas)
+        print("ROC score", _score)
+        predictions.append(_probas)
+        scores.append(_score)
+
+    starting_values = [1.0/len(predictions)]*len(predictions)
+
+    cons = ({'type':'eq','fun':lambda w: 1-sum(w)})
+    bounds = [(0.,1.)]*len(predictions)
+
+    res = minimize(rocFunc, starting_values, args= (predictions, test_y), method='SLSQP',
+            options={'disp': True, 'eps': 5e-2},
+            bounds=bounds, constraints=cons)
+    print res
+
+    print('Ensemble Score: {best_score}'.format(best_score=res['fun']))
+    print('Best Weights: {weights}'.format(weights=res['x']))
+
+
+    #predict_x, enrollment_id = loadData(test_file,test=True,scaler=scaler)
+    predict_y = 0
+    kk = 0
+    for clf, wt in zip(clfs, res['x']):
+        if kk < 6:
+            predict_y += clf.predict(dtest)
+        else:
+            predict_y += clf.predict_proba(predict_x)[:,1] * wt
+        kk += 1
+    sub = pd.concat([pd.DataFrame(enrollment_id), pd.DataFrame(predict_y)],axis=1)
+    sub.to_csv(outfile, index=False, header=False)
 
 
 
 if __name__ == '__main__':
-    make_feature(test=False, outfile='train_xy2.csv')
-    make_feature(test=True, outfile='test_features2.csv')
+    #make_feature(test=False, outfile='train_xy2.csv')
+    #make_feature(test=True, outfile='test_features2.csv')
     #tune(train_file='train_xy2.csv')
     run(train_file='train_xy2.csv', test_file='test_features2.csv', outfile='test_sub2.csv')
