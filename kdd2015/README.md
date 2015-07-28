@@ -49,3 +49,14 @@ Roughly, we want to assess the difficulty of the course, the diligence and consi
   * ratio # of user events / # of course modules 
   * start time of user events - time of module starts 
 
+The final features have 106 dimensions (with dummy variables e.g. 39 course ids count as 39 dimensions but really belong to one feature). 
+
+# What models? 
+* We have used four models: 
+  * xgboost (https://github.com/dmlc/xgboost), 
+  * gradient boosting in scikit-learn (http://scikit-learn.org/stable/modules/ensemble.html), 
+  * calibrated random forest in scikit-learn (http://scikit-learn.org/stable/modules/ensemble.html), and 
+  * neural network from lasagne (https://github.com/Lasagne/Lasagne) and nolearn (https://github.com/dnouri/nolearn). 
+* These models were trained using randomly selected 90% of the traning data. The performance of each model is evaluated based on the area under the ROC curve (AUC; between 0 and 1, and the higher the better) calculated from the rest 10% of the training data. 
+* Gradient boosting and xgboost both give the best single-model performence with AUC ~0.87+. Neural network seemed to give us the worst single-model performance among the above. 
+* By combining multiple models, we were able to reach AUC ~0.891. The winning AUC is ~0.909. 
